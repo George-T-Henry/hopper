@@ -71,6 +71,17 @@ def task() -> None:
 )
 @click.option("--parent", help="Parent task ID (creates a child task)")
 @click.option(
+    "--id-only",
+    is_flag=True,
+    help="Print only the new task ID on stdout (for scripting); errors go to stderr",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    help="Output JSON (same as the global --json; accepted after the subcommand)",
+)
+@click.option(
     "--author-did",
     envvar="HOPPER_DID",
     hidden=True,
@@ -100,6 +111,8 @@ def add_task(
     assign: str | None,
     created_by: str | None,
     parent: str | None,
+    id_only: bool,
+    json_flag: bool,
     author_did: str | None,
     author_location: str | None,
     kind: str,
@@ -190,7 +203,9 @@ def add_task(
                     task_data["description"] = description
                 result = client.create_task(task_data)
 
-        if ctx.json_output:
+        if id_only:
+            click.echo(result.get("id", ""))
+        elif ctx.json_output or json_flag:
             print_json(result)
         else:
             print_success(f"Created task: {result.get('id', '')}")
@@ -214,6 +229,16 @@ def add_task(
 )
 @click.option("--limit", type=int, default=50, help="Maximum number of tasks to show")
 @click.option("--compact", is_flag=True, help="Use compact table layout")
+@click.option(
+    "--assignee",
+    help="Filter by assignee (exact match, or prefix match e.g. 'claude:')",
+)
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    help="Output JSON (same as the global --json; accepted after the subcommand)",
+)
 @click.option("--ids-only", is_flag=True, help="Output task IDs only, one per line (for scripting)")
 @click.option(
     "--kind",
@@ -234,6 +259,8 @@ def list_tasks(
     sort_by: str,
     limit: int,
     compact: bool,
+    assignee: str | None,
+    json_flag: bool,
     ids_only: bool,
     kind: str | None = None,
     all_kinds: bool = False,
@@ -275,15 +302,23 @@ def list_tasks(
     if tag:
         params["tags"] = ",".join(tag)
 
-    # Fetch tasks
+    # Fetch tasks. The assignee filter runs client-side, so the limit must be
+    # applied after it, not before, or matches beyond the first `limit` rows
+    # would be hidden.
+    if assignee:
+        params["limit"] = 100_000
     try:
         with ctx.get_client() as client:
             tasks = client.list_tasks(**params)
 
+        if assignee:
+            tasks = [t for t in tasks if (t.get("assigned_to") or "").startswith(assignee)]
+            tasks = tasks[:limit]
+
         if ids_only:
             for task in tasks:
                 click.echo(task["id"])
-        elif ctx.json_output:
+        elif ctx.json_output or json_flag:
             print_json(tasks)
         else:
             print_task_table(tasks, compact=compact)
@@ -303,8 +338,16 @@ def list_tasks(
 @click.option(
     "--project", default=None, help="Project slug to filter lessons by (used with --with-lessons)"
 )
+@click.option(
+    "--json",
+    "json_flag",
+    is_flag=True,
+    help="Output JSON (same as the global --json; accepted after the subcommand)",
+)
 @click.pass_obj
-def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None) -> None:
+def get_task(
+    ctx: Context, task_id: str, with_lessons: bool, project: str | None, json_flag: bool
+) -> None:
     """Get detailed information about a task.
 
     Use --with-lessons to include high-confidence lessons from previous workers
@@ -324,7 +367,7 @@ def get_task(ctx: Context, task_id: str, with_lessons: bool, project: str | None
             else:
                 task = client.get_task(task_id)
 
-        if ctx.json_output:
+        if ctx.json_output or json_flag:
             print_json(task)
         else:
             print_task_detail(task)

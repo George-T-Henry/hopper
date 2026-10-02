@@ -13,7 +13,9 @@ This project uses [Hopper](https://github.com/apathy-ca/hopper) for persistent m
 
 ```bash
 hopper task add "Note or task"              # Store something
-hopper task list                            # See open tasks
+hopper task list                            # See open tasks (--json, --ids-only, --assignee X)
+hopper task get <id> --json                 # Full task as JSON
+hopper task add "Title" --id-only           # Print only the new task ID
 hopper task status <id> in_progress -f     # Claim a task
 hopper task status <id> completed -f       # Complete a task
 hopper task heartbeat <id>                  # Signal still working

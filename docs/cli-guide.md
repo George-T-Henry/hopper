@@ -233,8 +233,18 @@ hopper task list --sort-by priority --limit 10
 # Compact view
 hopper task list --compact
 
-# JSON output (for scripting)
+# JSON output (full, untruncated fields; works before or after the subcommand)
 hopper task list --json
+hopper task get <id> --json
+
+# Filter by assignee (exact, or prefix such as "claude:")
+hopper task list --assignee claude:my-task
+
+# One ID per line (for scripting). Table views always show full IDs.
+hopper task list --ids-only
+
+# Capture the new task's ID (only the ID on stdout; errors go to stderr)
+ID=$(hopper task add "Title" --non-interactive --id-only)
 ```
 
 ### Viewing Task Details
