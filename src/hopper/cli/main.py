@@ -129,6 +129,7 @@ def cli(
 # Import command groups
 from hopper.cli.commands.config import auth, config_group, init
 from hopper.cli.commands.context import context
+from hopper.cli.commands.doctor import doctor
 from hopper.cli.commands.github import github
 from hopper.cli.commands.instance import instance
 from hopper.cli.commands.kinds import register as register_kinds
@@ -155,6 +156,7 @@ cli.add_command(upstream)
 cli.add_command(revision)
 cli.add_command(mcp)
 cli.add_command(maintenance)
+cli.add_command(doctor)
 cli.add_command(overseer)
 
 # Shortcut: `hopper sync` → `hopper upstream sync` (with `hopper sync status`)
