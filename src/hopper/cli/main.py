@@ -5,6 +5,7 @@ from rich.console import Console
 
 from hopper import __version__
 from hopper.cli.config import Config, get_storage_path, is_local_mode, load_config
+from hopper.utils.version import version_report
 
 console = Console()
 
@@ -58,7 +59,11 @@ class Context:
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(version=__version__, prog_name="hopper")
+@click.version_option(
+    version=__version__,
+    prog_name="hopper",
+    message=version_report(__version__)[0].replace("%", "%%"),
+)
 @click.option(
     "--config",
     "-c",
