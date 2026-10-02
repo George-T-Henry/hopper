@@ -39,3 +39,10 @@ def test_cli_version_flag_shows_both():
     assert result.exit_code == 0
     assert f"version {__version__}" in result.output
     assert "packaging metadata" in result.output
+
+
+def test_packaging_version_reads_the_real_distribution_name():
+    from importlib import metadata
+
+    assert version_mod.DIST_NAME == "hopper-memory"
+    assert version_mod.packaging_version() == metadata.version("hopper-memory")

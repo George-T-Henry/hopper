@@ -10,10 +10,16 @@ from __future__ import annotations
 from importlib import metadata
 
 
+# The PyPI distribution is "hopper-memory" (see pyproject.toml); the import
+# package is "hopper". Looking up "hopper" instead can match a stale leftover
+# hopper.egg-info directory on sys.path and report an old version.
+DIST_NAME = "hopper-memory"
+
+
 def packaging_version() -> str | None:
     """Return the version recorded in installed package metadata, or None."""
     try:
-        return metadata.version("hopper")
+        return metadata.version(DIST_NAME)
     except Exception:
         return None
 
