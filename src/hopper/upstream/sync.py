@@ -266,6 +266,26 @@ def _apply_sync_task_to_local(
     return sync_task.id
 
 
+def pending_changes(
+    task_store: TaskMarkdownStore,
+    state_path: Path,
+    instance: str = "local",
+) -> list[str]:
+    """Return IDs of local tasks that a sync would push (read-only, offline).
+
+    Mirrors the change-collection step of :func:`sync_with_upstream`: anything
+    updated (or soft-deleted) after the stored ``last_sync`` cursor.
+
+    Args:
+        task_store: Local task storage
+        state_path: Base sync state path (instance suffix appended, as in sync)
+        instance: Instance ID qualifying the state file name
+    """
+    state_path = state_path.parent / f"{state_path.name}_{instance}"
+    state = SyncState.load(state_path)
+    return [t.id for t in task_store.list_since(state.last_sync, include_deleted=True)]
+
+
 def sync_with_upstream(
     task_store: TaskMarkdownStore,
     client: UpstreamClient,
