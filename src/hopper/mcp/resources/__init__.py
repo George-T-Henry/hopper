@@ -7,7 +7,7 @@ Exports all MCP resource definitions and handlers for tasks and projects.
 from collections.abc import Awaitable, Callable
 
 import httpx
-from mcp.types import Resource, TextContent
+from mcp_types import Resource, TextContent
 
 from .project_resources import (
     get_project_resources,

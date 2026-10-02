@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from mcp.types import Tool
+from mcp_types import Tool
 
 from .overseer_tools import (
     get_overseer_tools,

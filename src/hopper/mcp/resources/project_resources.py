@@ -7,7 +7,7 @@ Exposes projects as MCP resources accessible via hopper://projects/* URIs.
 import json
 
 import httpx
-from mcp.types import Resource, TextContent
+from mcp_types import Resource, TextContent
 
 
 def get_project_resources() -> list[Resource]:
@@ -21,7 +21,7 @@ def get_project_resources() -> list[Resource]:
             uri="hopper://projects",
             name="All Projects",
             description="List of all projects registered in Hopper",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
     ]
 

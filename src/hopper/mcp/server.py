@@ -7,13 +7,21 @@ assistants to interact with Hopper for task management and routing.
 
 import json
 import logging
-from collections.abc import Sequence
-from typing import Any
 
 import httpx
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import EmbeddedResource, ImageContent, Resource, TextContent, Tool
+from mcp_types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListResourcesResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    ReadResourceRequestParams,
+    ReadResourceResult,
+    TextContent,
+    TextResourceContents,
+)
 
 from .config import MCPServerConfig, get_mcp_config
 from .context import ServerContext
@@ -34,7 +42,15 @@ class HopperMCPServer:
             config: Server configuration. If None, loads from environment.
         """
         self.config = config or get_mcp_config()
-        self.server = Server(self.config.server_name)
+        # mcp SDK v2: handlers are passed to the low-level Server constructor
+        # (the v1 @server.list_tools() style decorators were removed).
+        self.server = Server(
+            self.config.server_name,
+            on_list_tools=self._handle_list_tools,
+            on_call_tool=self._handle_call_tool,
+            on_list_resources=self._handle_list_resources,
+            on_read_resource=self._handle_read_resource,
+        )
         self.context = ServerContext(self.config)
         self.http_client: httpx.AsyncClient | None = None
 
@@ -44,75 +60,76 @@ class HopperMCPServer:
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         )
 
-        # Register handlers
-        self._register_handlers()
+    async def _handle_list_tools(
+        self, ctx: ServerRequestContext, params: PaginatedRequestParams | None
+    ) -> ListToolsResult:
+        """List available MCP tools."""
+        return ListToolsResult(tools=get_all_tools())
 
-    def _register_handlers(self) -> None:
-        """Register MCP protocol handlers."""
+    async def _handle_call_tool(
+        self, ctx: ServerRequestContext, params: CallToolRequestParams
+    ) -> CallToolResult:
+        """Handle tool calls."""
+        name = params.name
+        arguments = params.arguments or {}
+        try:
+            client = await self._get_http_client()
+            context = self.context.get_context()
 
-        @self.server.list_tools()
-        async def list_tools() -> list[Tool]:
-            """List available MCP tools."""
-            return get_all_tools()
+            result = await call_tool_handler(
+                name=name,
+                arguments=arguments,
+                client=client,
+                context=context,
+                config=self.config,
+            )
 
-        @self.server.call_tool()
-        async def call_tool(
-            name: str, arguments: Any
-        ) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
-            """Handle tool calls."""
-            try:
-                client = await self._get_http_client()
-                context = self.context.get_context()
+            # Update context for task creation
+            if name == "hopper_create_task" and "task_id" in result:
+                self.context.add_recent_task(result["task_id"], result.get("title", ""))
 
-                result = await call_tool_handler(
-                    name=name,
-                    arguments=arguments,
-                    client=client,
-                    context=context,
-                    config=self.config,
-                )
+            # Format result as JSON for better readability
+            return CallToolResult(content=[TextContent(text=json.dumps(result, indent=2))])
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error executing tool {name}: {e.response.status_code} - {e.response.text}"
+            )
+            return CallToolResult(
+                content=[
+                    TextContent(text=f"API Error ({e.response.status_code}): {e.response.text}")
+                ],
+                is_error=True,
+            )
+        except Exception as e:
+            logger.error(f"Error executing tool {name}: {e}", exc_info=True)
+            return CallToolResult(content=[TextContent(text=f"Error: {str(e)}")], is_error=True)
 
-                # Update context for task creation
-                if name == "hopper_create_task" and "task_id" in result:
-                    self.context.add_recent_task(result["task_id"], result.get("title", ""))
+    async def _handle_list_resources(
+        self, ctx: ServerRequestContext, params: PaginatedRequestParams | None
+    ) -> ListResourcesResult:
+        """List available resources."""
+        return ListResourcesResult(resources=get_all_resources())
 
-                # Format result as JSON for better readability
-                return [TextContent(type="text", text=json.dumps(result, indent=2))]
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"HTTP error executing tool {name}: {e.response.status_code} - {e.response.text}"
-                )
-                return [
-                    TextContent(
-                        type="text", text=f"API Error ({e.response.status_code}): {e.response.text}"
-                    )
-                ]
-            except Exception as e:
-                logger.error(f"Error executing tool {name}: {e}", exc_info=True)
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
+    async def _handle_read_resource(
+        self, ctx: ServerRequestContext, params: ReadResourceRequestParams
+    ) -> ReadResourceResult:
+        """Handle resource read requests."""
+        uri = params.uri
+        try:
+            client = await self._get_http_client()
+            contents = await read_resource(uri, client, self.config)
 
-        @self.server.list_resources()
-        async def list_resources() -> list[Resource]:
-            """List available resources."""
-            return get_all_resources()
-
-        @self.server.read_resource()
-        async def read_resource_handler(uri: str) -> str:
-            """Handle resource read requests."""
-            try:
-                client = await self._get_http_client()
-                contents = await read_resource(uri, client, self.config)
-
-                # Combine all text contents into a single string
-                return "\n".join(content.text for content in contents)
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"HTTP error reading resource {uri}: {e.response.status_code} - {e.response.text}"
-                )
-                return f"API Error ({e.response.status_code}): {e.response.text}"
-            except Exception as e:
-                logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
-                return f"Error: {str(e)}"
+            # Combine all text contents into a single string
+            text = "\n".join(content.text for content in contents)
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error reading resource {uri}: {e.response.status_code} - {e.response.text}"
+            )
+            text = f"API Error ({e.response.status_code}): {e.response.text}"
+        except Exception as e:
+            logger.error(f"Error reading resource {uri}: {e}", exc_info=True)
+            text = f"Error: {str(e)}"
+        return ReadResourceResult(contents=[TextResourceContents(uri=uri, text=text)])
 
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""

@@ -42,8 +42,8 @@ class TestTaskToolDefinitions:
         tools = get_task_tools()
         create_tool = next(t for t in tools if t.name == "hopper_create_task")
 
-        assert "title" in create_tool.inputSchema["required"]
-        assert "title" in create_tool.inputSchema["properties"]
+        assert "title" in create_tool.input_schema["required"]
+        assert "title" in create_tool.input_schema["properties"]
 
 
 class TestCreateTask:

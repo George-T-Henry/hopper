@@ -1,6 +1,6 @@
 """SSE and Streamable HTTP transports for the MCP server.
 
-Wires the FastMCP server (defined in ``hopper.api.mcp_sse``) up to the two
+Wires the MCPServer (formerly FastMCP) (defined in ``hopper.api.mcp_sse``) up to the two
 HTTP transports MCP clients use: the legacy SSE transport (``/mcp/sse/``)
 and the Streamable HTTP transport (``/mcp``, MCP 1.26+).
 """
@@ -12,7 +12,9 @@ from mcp.server.sse import SseServerTransport
 from mcp.server.streamable_http import MCP_SESSION_ID_HEADER
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.applications import Starlette
-from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Mount, Route
 
 from hopper.api.mcp_sse.auth import _check_auth
 
@@ -50,31 +52,41 @@ def create_sse_server():
             async with transport.connect_sse(
                 request.scope, request.receive, request._send
             ) as streams:
-                await _sse.mcp._mcp_server.run(
+                await _sse.mcp._lowlevel_server.run(
                     streams[0],
                     streams[1],
-                    _sse.mcp._mcp_server.create_initialization_options(),
+                    _sse.mcp._lowlevel_server.create_initialization_options(),
                 )
         finally:
             _sse._session_instances.pop(sid, None)
             _sse._session_id.reset(sid_token)
             _sse._session_did.reset(did_token)
+        # mcp SDK: the endpoint must return a Response once the SSE stream ends,
+        # otherwise Starlette raises "'NoneType' object is not callable".
+        return Response()
 
-    async def handle_messages(request):
+    async def handle_messages(scope, receive, send):
+        """Raw ASGI endpoint: handle_post_message sends its own response.
+
+        (A Starlette ``Route`` function endpoint would try to call the ``None``
+        that handle_post_message returns, after the 202 has already been sent.)
+        """
+        request = Request(scope, receive)
         body = await request.body()
         auth_error, auth_id, instance_path, instance_name = _check_auth(request, body)
         if auth_error:
-            return auth_error
+            await auth_error(scope, receive, send)
+            return
 
         async def replay_receive():
             return {"type": "http.request", "body": body, "more_body": False}
 
-        return await transport.handle_post_message(request.scope, replay_receive, request._send)
+        await transport.handle_post_message(scope, replay_receive, send)
 
     return Starlette(
         routes=[
             Route("/sse/", endpoint=handle_sse),
-            Route("/messages/", endpoint=handle_messages, methods=["POST"]),
+            Mount("/messages/", app=handle_messages),
         ]
     )
 
@@ -94,7 +106,7 @@ def get_streamable_session_manager() -> StreamableHTTPSessionManager:
         from hopper.api import mcp_sse as _sse
 
         _streamable_session_manager = StreamableHTTPSessionManager(
-            app=_sse.mcp._mcp_server,
+            app=_sse.mcp._lowlevel_server,
             json_response=True,
             stateless=False,
         )
@@ -108,7 +120,7 @@ def get_stateless_session_manager() -> StreamableHTTPSessionManager:
         from hopper.api import mcp_sse as _sse
 
         _stateless_session_manager = StreamableHTTPSessionManager(
-            app=_sse.mcp._mcp_server,
+            app=_sse.mcp._lowlevel_server,
             json_response=True,
             stateless=True,
         )
@@ -240,7 +252,13 @@ class _StreamableHTTPASGIHandler:
         finally:
             _sse._session_id.reset(sid_token)
             _sse._session_did.reset(did_token)
-            # Don't pop _session_instances here — the session persists across requests
+            # Don't pop _session_instances for a client-supplied session ID — the
+            # session persists across requests. Requests without Mcp-Session-Id
+            # (initialize, and every request under the stateless 2026-07-28
+            # protocol) get a throwaway ID that nothing can ever look up again,
+            # so drop it to avoid leaking one entry per request.
+            if raw_sid is None:
+                _sse._session_instances.pop(sid, None)
 
 
 def create_streamable_http_server() -> _StreamableHTTPASGIHandler:
