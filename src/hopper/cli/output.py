@@ -176,7 +176,7 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
     )
 
     # Add columns
-    table.add_column("ID", style="dim", width=8)
+    table.add_column("ID", style="dim", no_wrap=True, overflow="fold", min_width=9)
     table.add_column("Title", style="bold")
     table.add_column("Status", justify="center")
     table.add_column("Priority", justify="center")
@@ -188,7 +188,7 @@ def print_task_table(tasks: list[dict[str, Any]], compact: bool = False) -> None
 
     # Add rows
     for task in tasks:
-        task_id = str(task.get("id", ""))[:8]
+        task_id = str(task.get("id", ""))
         title = task.get("title", "")
         status = task.get("status", "unknown")
         priority = task.get("priority", "medium")
@@ -333,7 +333,7 @@ def print_project_table(projects: list[dict[str, Any]]) -> None:
 
     table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
 
-    table.add_column("ID", style="dim", width=8)
+    table.add_column("ID", style="dim", no_wrap=True, overflow="fold", min_width=9)
     table.add_column("Name", style="bold")
     table.add_column("Description", style="dim")
     table.add_column("Tasks", justify="center")
