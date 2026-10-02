@@ -275,11 +275,19 @@ async def sync(
             )
 
     # Get tasks updated since client's timestamp, scoped to this instance namespace
-    updated_tasks = storage.list_since(sync_req.since, instance=sync_req.instance)
+    next_since: int | None = None
+    if sync_req.pull_limit is None:
+        updated_tasks = storage.list_since(sync_req.since, instance=sync_req.instance)
+    else:
+        updated_tasks, next_since = storage.list_since_page(
+            sync_req.since, sync_req.instance, sync_req.pull_limit
+        )
 
     return SyncResponse(
         tasks=updated_tasks,
         server_time=server_time,
+        has_more=next_since is not None,
+        next_since=next_since,
         accepted=accepted,
         rejected=rejected,
     )

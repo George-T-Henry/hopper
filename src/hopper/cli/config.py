@@ -74,6 +74,11 @@ class UpstreamConfig(BaseModel):
         default=False,
         description="Enable upstream sync",
     )
+    batch_size: int = Field(
+        default=100,
+        ge=1,
+        description="Max records per sync push request (halved automatically on HTTP 413)",
+    )
 
 
 class ProfileConfig(BaseModel):

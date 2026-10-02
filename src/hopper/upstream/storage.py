@@ -1915,6 +1915,39 @@ class UpstreamStorage:
                 tasks.append(stored.task)
         return tasks
 
+    def list_since_page(
+        self, since_ms: int, instance: str, limit: int
+    ) -> tuple[list[SyncTask], int | None]:
+        """One page of ``list_since``, oldest first.
+
+        Returns ``(tasks, next_since)``; ``next_since`` is None when this page
+        reaches the end. The page is extended to cover every entry sharing the
+        last timestamp, because the cursor comparison is a strict ``>`` and a
+        split tie would be skipped.
+        """
+        import bisect
+
+        prefix = instance + "/"
+        # Sentinel key sorts after every real key at since_ms, so entries tied
+        # exactly at the cursor are excluded (strict ">"). A plain "" here would
+        # re-return them and a pager would loop forever.
+        start_idx = bisect.bisect_right(self._index_by_time, (since_ms, "\U0010ffff"))
+        entries = [
+            (ts, key.split("/", 1)[1])
+            for ts, key in self._index_by_time[start_idx:]
+            if key.startswith(prefix)
+        ]
+        cut = min(limit, len(entries))
+        while 0 < cut < len(entries) and entries[cut][0] == entries[cut - 1][0]:
+            cut += 1
+        tasks = []
+        for _, task_id in entries[:cut]:
+            stored = self.get(instance, task_id)
+            if stored:
+                tasks.append(stored.task)
+        next_since = entries[cut - 1][0] if cut < len(entries) else None
+        return tasks, next_since
+
     def list_all(self, instance: str) -> list[SyncTask]:
         """List all tasks for an instance."""
         return self.list_since(0, instance)

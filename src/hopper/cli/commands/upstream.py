@@ -97,12 +97,24 @@ def set_server(ctx: Context, url: str) -> None:
 @upstream.command(name="sync")
 @click.option("--server", "-s", help="Upstream server URL (overrides config)")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed sync info")
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    help="Max records per push request (default: upstream.batch_size, 100)",
+)
+@click.option("--dry-run", is_flag=True, help="Show pending local changes without syncing")
 @click.pass_obj
-def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
+def sync_upstream(
+    ctx: Context,
+    server: str | None,
+    verbose: bool,
+    batch_size: int | None = None,
+    dry_run: bool = False,
+) -> None:
     """Sync tasks with upstream server."""
     from hopper.upstream.client import UpstreamClient, UpstreamError
     from hopper.upstream.did import load_did_key
-    from hopper.upstream.sync import sync_with_upstream
+    from hopper.upstream.sync import pending_changes, sync_with_upstream
 
     profile = ctx.config.current_profile
 
@@ -145,6 +157,13 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
     # Sync state path
     state_path = storage_path / ".sync_state"
 
+    if dry_run:
+        count, size = pending_changes(
+            task_store, state_path, instance=local_client.config.instance_id
+        )
+        print_info(f"{count} local change(s) pending, ~{size / 1024:.0f} KiB")
+        return
+
     if verbose:
         print_info(f"Syncing with {server_url}...")
         print_info(f"Using DID: {did_key.did}")
@@ -155,10 +174,11 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
             client=client,
             state_path=state_path,
             instance=local_client.config.instance_id,
+            batch_size=batch_size or profile.upstream.batch_size,
         )
     except UpstreamError as e:
         print_error(f"Sync failed: {e}")
-        raise click.Abort() from e
+        raise click.exceptions.Exit(1) from e
 
     if ctx.json_output:
         print_json(
@@ -173,7 +193,7 @@ def sync_upstream(ctx: Context, server: str | None, verbose: bool) -> None:
         if result.errors:
             for error in result.errors:
                 print_error(error)
-            raise click.Abort()
+            raise click.exceptions.Exit(1)
 
         pushed_count = len(result.pushed)
         pulled_count = len(result.pulled)
@@ -1533,15 +1553,29 @@ def redeem_cmd(ctx: Context, token: str, server: str | None, key: str | None) ->
 @click.group(name="sync", invoke_without_command=True)
 @click.option("--server", "-s", help="Upstream server URL (overrides config)")
 @click.option("--verbose", "-v", is_flag=True, help="Show detailed sync info")
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    help="Max records per push request (default: upstream.batch_size, 100)",
+)
+@click.option("--dry-run", is_flag=True, help="Show pending local changes without syncing")
 @click.pass_context
-def sync_group(click_ctx: click.Context, server: str | None, verbose: bool) -> None:
+def sync_group(
+    click_ctx: click.Context,
+    server: str | None,
+    verbose: bool,
+    batch_size: int | None,
+    dry_run: bool,
+) -> None:
     """Sync tasks with the upstream server.
 
     Run without a subcommand to perform a sync. Use `hopper sync status` to see
     the real upstream target and last-sync time.
     """
     if click_ctx.invoked_subcommand is None:
-        click_ctx.invoke(sync_upstream, server=server, verbose=verbose)
+        click_ctx.invoke(
+            sync_upstream, server=server, verbose=verbose, batch_size=batch_size, dry_run=dry_run
+        )
 
 
 @sync_group.command(name="status")
