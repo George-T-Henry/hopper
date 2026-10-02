@@ -7,7 +7,7 @@ Provides MCP tools for listing, getting, creating projects, and retrieving proje
 from typing import Any
 
 import httpx
-from mcp.types import Tool
+from mcp_types import Tool
 
 
 def get_project_tools() -> list[Tool]:
@@ -23,7 +23,7 @@ def get_project_tools() -> list[Tool]:
                 "List all projects registered in Hopper. Projects represent different "
                 "destinations where tasks can be routed (e.g., GitHub repos, GitLab projects)."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "limit": {
@@ -47,7 +47,7 @@ def get_project_tools() -> list[Tool]:
                 "Get detailed information about a specific project including its "
                 "configuration, routing rules, and statistics."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "project_id": {
@@ -64,7 +64,7 @@ def get_project_tools() -> list[Tool]:
                 "Register a new project in Hopper. This allows tasks to be routed to "
                 "this project. Typically used to add GitHub repos or GitLab projects."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "name": {
@@ -110,7 +110,7 @@ def get_project_tools() -> list[Tool]:
                 "Get all tasks for a specific project. Useful for seeing what work "
                 "is queued or in progress for a project."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "project_id": {

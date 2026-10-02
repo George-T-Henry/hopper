@@ -42,7 +42,7 @@ if TYPE_CHECKING:
     from hopper.upstream.protocol import SyncTask
     from hopper.upstream.storage import UpstreamStorage
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from hopper.api.mcp_sse.auth import _check_auth
 from hopper.api.mcp_sse.transport import (
@@ -411,8 +411,8 @@ def _get_client():
     return LocalClient()
 
 
-# Initialize FastMCP server
-mcp = FastMCP("hopper")
+# Initialize MCPServer (mcp SDK v2; formerly FastMCP)
+mcp = MCPServer("hopper")
 
 
 # =============================================================================
