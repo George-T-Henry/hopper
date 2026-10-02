@@ -262,6 +262,15 @@ Update README.md when:
 - **Bugs**: Open a GitHub Issue with reproduction steps
 - **Features**: Open a GitHub Issue with use case description
 
+### Where feedback goes
+
+File feedback as a GitHub Issue using the templates in `.github/ISSUE_TEMPLATE/`
+(bug report, feature request, or agent UX feedback for friction hit by agents and
+scripts). Each asks for your Hopper version, local vs server mode, the exact
+command, and expected vs actual behaviour. Root-level files such as
+`AGENT_UX_FEEDBACK_*.md` were the old ad-hoc way of collecting feedback; please
+use issues instead. The `inbox/` folder is for machine task intake, not feedback.
+
 ## License
 
 By contributing to Hopper, you agree that your contributions will be licensed under the same license as the project (MIT License).
