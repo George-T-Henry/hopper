@@ -24,7 +24,7 @@ def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.chdir(tmp_path)
     # Never touch the network or the real checkout.
     monkeypatch.setattr(doctor_mod, "_tcp_reachable", lambda *a, **k: False)
-    monkeypatch.setattr(doctor_mod, "_hopper_repo_root", lambda: None)
+    monkeypatch.setattr("hopper.utils.install.editable_install_status", lambda *a, **k: None)
 
 
 @pytest.fixture
@@ -32,6 +32,10 @@ def storage(tmp_path: Path) -> Path:
     path = tmp_path / "proj" / ".hopper"
     path.mkdir(parents=True)
     LocalClient(path).close()  # initialise layout
+    cfg = path / "config.yaml"
+    data = yaml.safe_load(cfg.read_text()) or {}
+    data["instance"] = {"id": "proj", "name": "proj", "scope": "personal"}  # matches the dir
+    cfg.write_text(yaml.safe_dump(data))
     from hopper.storage.knowledge import write_agent_files
 
     write_agent_files(path.parent)  # current agent files, so a fresh project is clean
@@ -244,3 +248,59 @@ def test_missing_storage_degrades_to_error_not_crash(tmp_path):
     r = CliRunner().invoke(doctor_mod.doctor, ["--json"], obj=ctx)
     assert r.exit_code == 2
     assert by_id(r)["tasks.load"]["status"] == "error"
+
+
+def _checks(storage, tmp_path, **kw):
+    ctx = make_ctx(storage, tmp_path, **kw)
+    r = CliRunner().invoke(doctor_mod.doctor, ["--json"], obj=ctx)
+    return {c["id"]: c for c in json.loads(r.stdout)}
+
+
+def test_instance_id_mismatch_warns(storage, tmp_path):
+    cfg = storage / "config.yaml"
+    data = yaml.safe_load(cfg.read_text()) if cfg.exists() else {}
+    data["instance"] = {"id": "other-name", "name": "other-name"}
+    cfg.write_text(yaml.safe_dump(data))
+    assert _checks(storage, tmp_path)["config.instance"]["status"] == "warn"
+
+    data["instance"] = {"id": storage.parent.name, "name": "x"}
+    cfg.write_text(yaml.safe_dump(data))
+    assert _checks(storage, tmp_path)["config.instance"]["status"] == "ok"
+
+
+@pytest.mark.parametrize(
+    ("remote", "status"),
+    [("__CLI__", "ok"), ("0.0.9", "warn"), (None, "warn"), ("0.1.0", "warn")],
+)
+def test_server_version_check(remote, status):
+    from unittest.mock import MagicMock, patch
+
+    from hopper import __version__
+
+    body = (
+        {"status": "ok"}
+        if remote is None
+        else {"version": __version__ if remote == "__CLI__" else remote}
+    )
+    with patch("httpx.get", return_value=MagicMock(json=lambda: body)):
+        assert doctor_mod._check_server_version("https://x").status == status
+
+
+def test_server_version_unreachable_is_not_a_failure():
+    from unittest.mock import patch
+
+    with patch("httpx.get", side_effect=OSError("down")):
+        assert doctor_mod._check_server_version("https://x").status == "ok"
+
+
+def test_install_behind_warns(storage, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "hopper.utils.install.editable_install_status",
+        lambda *a, **k: {
+            "repo": "/r",
+            "branch": "feat/x",
+            "default_ref": "origin/master",
+            "behind": 29,
+        },
+    )
+    assert _checks(storage, tmp_path)["environment.install"]["status"] == "warn"

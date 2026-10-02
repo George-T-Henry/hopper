@@ -128,14 +128,6 @@ def _git(args: list[str], cwd: Path) -> str | None:
     return res.stdout.strip() if res.returncode == 0 else None
 
 
-def _hopper_repo_root() -> Path | None:
-    """Return the git checkout root if hopper is an editable install."""
-    import hopper
-
-    root = Path(hopper.__file__).resolve().parents[2]
-    return root if (root / ".git").exists() else None
-
-
 def _tcp_reachable(url: str, timeout: float = 1.0) -> bool:
     parsed = urlparse(url)
     host = parsed.hostname
@@ -237,12 +229,64 @@ def check_config(env: Env) -> list[Check]:
         )
     else:
         out.append(Check("config.paths", OK, "Configured paths exist"))
+    out.extend(_check_instance_name(env))
     return out
+
+
+def _check_instance_name(env: Env) -> list[Check]:
+    """Project instance id should match the project directory it lives in."""
+    if env.storage is None or env.is_global_store or env.project_dir is None:
+        return []
+    cfg = _load_yaml(env.project_config_path).get("instance")
+    inst = cfg.get("id") if isinstance(cfg, dict) else None
+    if not inst:
+        return []
+    dirname = env.project_dir.name
+    if str(inst).lower() == dirname.lower():
+        return [Check("config.instance", OK, f"Instance '{inst}' matches directory")]
+    return [
+        Check(
+            "config.instance",
+            WARN,
+            f"Instance id '{inst}' differs from project directory '{dirname}' "
+            "(sync state and shared-board namespace follow the id)",
+            "if unintended: edit instance.id in .hopper/config.yaml",
+        )
+    ]
 
 
 # --------------------------------------------------------------------------
 # checks: sync
 # --------------------------------------------------------------------------
+
+
+def _check_server_version(server: str) -> Check:
+    """Compare CLI and server versions via /health (older servers omit it)."""
+    from hopper import __version__
+
+    try:
+        import httpx
+
+        data = httpx.get(server.rstrip("/") + "/health", timeout=2.0).json()
+        remote = data.get("version") if isinstance(data, dict) else None
+    except Exception:  # noqa: BLE001
+        return Check("sync.server_version", OK, "Server version unavailable")
+    if not remote or remote == "0.1.0":
+        return Check(
+            "sync.server_version",
+            WARN,
+            f"Server does not report a hopper version (CLI is {__version__}); "
+            "it is likely older than 0.4 and won't page large pulls",
+            "upgrade the server to the same hopper version",
+        )
+    if remote != __version__:
+        return Check(
+            "sync.server_version",
+            WARN,
+            f"CLI {__version__} vs server {remote}",
+            "upgrade whichever side is older",
+        )
+    return Check("sync.server_version", OK, f"CLI and server both {__version__}")
 
 
 def check_sync(env: Env, store: Any | None) -> list[Check]:
@@ -286,6 +330,7 @@ def check_sync(env: Env, store: Any | None) -> list[Check]:
     # reachability (fast, failure-tolerant)
     if _tcp_reachable(str(up.server)):
         out.append(Check("sync.reachable", OK, f"Upstream reachable: {up.server}"))
+        out.append(_check_server_version(str(up.server)))
     else:
         out.append(
             Check(
@@ -529,23 +574,26 @@ def check_environment(env: Env, all_records: list[Any]) -> list[Check]:
         else:
             out.append(Check("environment.agent_files", OK, f"Agent files at v{AGENTS_MD_VERSION}"))
 
-    # editable install behind origin/master
-    root = _hopper_repo_root()
-    if root is None:
+    # editable install behind origin's default branch
+    from hopper.utils.install import editable_install_status
+
+    st = editable_install_status()
+    if st is None:
         out.append(Check("environment.install", OK, "Not an editable git install"))
     else:
-        branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], root)
-        behind = _git(["rev-list", "--count", "HEAD..origin/master"], root)
-        if branch is None or behind is None:
+        branch = st.get("branch") or "(detached)"
+        behind = st.get("behind")
+        ref = st.get("default_ref") or "origin default branch"
+        if behind is None:
             out.append(Check("environment.install", OK, "Editable install; branch state unknown"))
-        elif behind.isdigit() and int(behind) > 0:
+        elif behind > 0:
             out.append(
                 Check(
                     "environment.install",
                     WARN,
-                    f"Editable install on '{branch}' is {behind} commit(s) behind origin/master "
-                    "(per last fetch)",
-                    f"git -C {root} fetch && git -C {root} merge origin/master",
+                    f"Editable install on '{branch}' is {behind} commit(s) behind {ref} "
+                    "(per last fetch); documented features may be missing",
+                    f"git -C {st['repo']} fetch && git -C {st['repo']} merge {ref}",
                 )
             )
         else:

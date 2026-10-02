@@ -1288,7 +1288,9 @@ def _build_standalone_app() -> FastAPI:
 
     @standalone.get("/health")
     async def _health() -> dict:
-        return {"status": "ok", "time": int(time.time() * 1000)}
+        from hopper import __version__
+
+        return {"status": "ok", "time": int(time.time() * 1000), "version": __version__}
 
     standalone.include_router(router)
     return standalone
