@@ -168,8 +168,15 @@ def reset_database_dev_only(engine: Engine | None = None) -> None:
         engine = create_sync_engine()
 
     # Safety check - don't allow reset on production databases
+    # Inspect the parsed URL: str(url) spells an in-memory SQLite database as
+    # "sqlite://" on SQLAlchemy 2.1+, so a ":memory:" substring check misses it.
     url = str(engine.url)
-    if "localhost" not in url and ":memory:" not in url and "test" not in url:
+    in_memory = engine.url.get_backend_name() == "sqlite" and engine.url.database in (
+        None,
+        "",
+        ":memory:",
+    )
+    if "localhost" not in url and not in_memory and ":memory:" not in url and "test" not in url:
         raise RuntimeError(
             "Cannot reset database: appears to be a production database. "
             "Only localhost, in-memory, or test databases can be reset."

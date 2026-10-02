@@ -230,7 +230,10 @@ def test_fix_releases_stale_annotates_and_reclassifies(storage, tmp_path):
 
 def test_fix_json_keeps_stdout_pure(storage, tmp_path):
     add_task(storage, status="in_progress", age_days=4)
-    runner = CliRunner(mix_stderr=False)
+    try:
+        runner = CliRunner(mix_stderr=False)  # click < 8.2
+    except TypeError:
+        runner = CliRunner()  # click >= 8.2 always separates stderr
     r = runner.invoke(doctor_mod.doctor, ["--fix", "--json"], obj=make_ctx(storage, tmp_path))
     assert "FIX: releasing" in r.stderr
     json.loads(r.stdout)  # parses; FIX lines went to stderr
