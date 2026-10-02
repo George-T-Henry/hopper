@@ -7,7 +7,7 @@ Provides MCP tools for task routing and getting routing suggestions.
 from typing import Any
 
 import httpx
-from mcp.types import Tool
+from mcp_types import Tool
 
 
 def get_routing_tools() -> list[Tool]:
@@ -24,7 +24,7 @@ def get_routing_tools() -> list[Tool]:
                 "automatic routing or route tasks that weren't automatically assigned. "
                 "The routing engine considers project capabilities and historical patterns."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_id": {
@@ -56,7 +56,7 @@ def get_routing_tools() -> list[Tool]:
                 "Useful for previewing where a task would be routed before actually creating it. "
                 "Returns suggested destinations with confidence scores."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_description": {

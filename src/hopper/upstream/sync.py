@@ -16,8 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .client import UpstreamClient, UpstreamError
-from .protocol import SyncTask
+from .client import PayloadTooLargeError, UpstreamClient, UpstreamError
+from .protocol import SyncResponse, SyncTask
 
 if TYPE_CHECKING:
     from hopper.storage.tasks import LocalTask, TaskMarkdownStore
@@ -68,6 +68,12 @@ class SyncState:
                 },
                 f,
             )
+
+
+DEFAULT_BATCH_SIZE = 100
+# Stay under nginx's default client_max_body_size (1 MiB), leaving headroom for
+# the request envelope.
+DEFAULT_BATCH_BYTES = 800_000
 
 
 @dataclass
@@ -266,11 +272,61 @@ def _apply_sync_task_to_local(
     return sync_task.id
 
 
+def _updated_ms(task: LocalTask) -> int:
+    return _datetime_to_ms(task.updated_at)
+
+
+def _next_batch(
+    tasks: list[LocalTask], max_records: int, max_bytes: int
+) -> tuple[list[SyncTask], int]:
+    """Take a leading slice of ``tasks`` (sorted by updated_at) as one request body.
+
+    Bounded by record count and approximate serialized size (a single oversized
+    task still goes alone).
+
+    Returns the wire tasks and how many local tasks were consumed.
+    """
+    batch: list[SyncTask] = []
+    size = 0
+    n = 0
+    while n < len(tasks) and n < max_records:
+        wire = _local_task_to_sync_task(tasks[n])
+        wire_size = len(wire.model_dump_json())
+        if batch and size + wire_size > max_bytes:
+            break
+        batch.append(wire)
+        size += wire_size
+        n += 1
+    return batch, n
+
+
+def _apply_pulled(
+    response: SyncResponse, task_store: TaskMarkdownStore, result: SyncResult
+) -> None:
+    for sync_task in response.tasks:
+        task_id = _apply_sync_task_to_local(sync_task, task_store)
+        if task_id:
+            result.pulled.append(task_id)
+
+
+def pending_changes(
+    task_store: TaskMarkdownStore, state_path: Path, instance: str = "local"
+) -> tuple[int, int]:
+    """Count (records, approximate bytes) that the next sync would push."""
+    state_path = state_path.parent / f"{state_path.name}_{instance}"
+    state = SyncState.load(state_path)
+    changed = task_store.list_since(state.last_sync, include_deleted=True)
+    size = sum(len(_local_task_to_sync_task(t).model_dump_json()) for t in changed)
+    return len(changed), size
+
+
 def sync_with_upstream(
     task_store: TaskMarkdownStore,
     client: UpstreamClient,
     state_path: Path,
     instance: str = "local",
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    batch_bytes: int = DEFAULT_BATCH_BYTES,
 ) -> SyncResult:
     """Perform a full sync with upstream server.
 
@@ -285,6 +341,8 @@ def sync_with_upstream(
         client: Upstream client
         state_path: Path to sync state file (base path; instance suffix appended)
         instance: Instance ID used to qualify the sync state file name
+        batch_size: Max records per push request. Halved automatically on HTTP 413.
+        batch_bytes: Approximate max serialized bytes per push request
 
     Returns:
         SyncResult with pushed/pulled/conflict counts
@@ -303,36 +361,64 @@ def sync_with_upstream(
 
     # Collect local tasks modified since last sync (including soft-deleted)
     # Uses index-based filtering to avoid loading all tasks
-    changed_tasks = task_store.list_since(state.last_sync, include_deleted=True)
-    local_changes = [_local_task_to_sync_task(task) for task in changed_tasks]
+    pending = sorted(task_store.list_since(state.last_sync, include_deleted=True), key=_updated_ms)
 
-    # Sync with server
-    try:
-        response = client.sync(
-            tasks=local_changes,
-            since=state.last_server_time,
-            instance=instance,
-        )
-    except UpstreamError as e:
-        result.errors.append(str(e))
-        return result
+    # Push in bounded batches so a large backlog can't exceed a proxy body
+    # limit. The cursor advances after each accepted batch, so a mid-run
+    # failure resumes where it stopped instead of redoing earlier batches.
+    # The pull cursor advances likewise: later batches only ask for what the
+    # previous response didn't already cover.
+    batch_size = max(1, batch_size)
+    since = state.last_server_time
+    while True:
+        batch, consumed = _next_batch(pending, batch_size, batch_bytes)
+        try:
+            response = client.sync(
+                tasks=batch, since=since, instance=instance, pull_limit=batch_size
+            )
+        except PayloadTooLargeError as e:
+            if len(batch) > 1:
+                batch_size = max(1, len(batch) // 2)
+                batch_bytes = max(1, batch_bytes // 2)
+                continue
+            result.errors.append(str(e))
+            return result
+        except UpstreamError as e:
+            result.errors.append(str(e))
+            return result
 
-    # Record pushed tasks
-    result.pushed = response.accepted
+        result.pushed.extend(response.accepted)
+        result.conflicts.extend(c.task_id for c in response.rejected)
+        _apply_pulled(response, task_store, result)
 
-    # Record conflicts
-    for conflict in response.rejected:
-        result.conflicts.append(conflict.task_id)
+        # Drain remaining pull pages. Until the last page, the cursor is the
+        # page boundary (not server_time) so a failure resumes mid-pull.
+        while response.has_more and response.next_since is not None:
+            state.last_server_time = response.next_since
+            state.save(state_path)
+            try:
+                response = client.sync(
+                    tasks=[],
+                    since=response.next_since,
+                    instance=instance,
+                    pull_limit=batch_size,
+                )
+            except UpstreamError as e:
+                result.errors.append(str(e))
+                return result
+            _apply_pulled(response, task_store, result)
 
-    # Apply remote changes
-    for sync_task in response.tasks:
-        task_id = _apply_sync_task_to_local(sync_task, task_store)
-        if task_id:
-            result.pulled.append(task_id)
-
-    # Update sync state using the pre-sync snapshot, not "now".
-    state.last_sync = sync_start_ms
-    state.last_server_time = response.server_time
-    state.save(state_path)
+        since = response.server_time
+        state.last_server_time = response.server_time
+        rest = pending[consumed:]
+        # Final batch: use the pre-sync snapshot, not "now". Intermediate
+        # batches: resume at the last task sent. list_since is a strict ">", so
+        # step back 1 ms to keep tasks tied on that millisecond; re-sending
+        # them is idempotent.
+        state.last_sync = _updated_ms(pending[consumed - 1]) - 1 if rest else sync_start_ms
+        state.save(state_path)
+        pending = rest
+        if not pending:
+            break
 
     return result

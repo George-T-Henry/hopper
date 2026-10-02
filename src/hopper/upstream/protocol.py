@@ -118,6 +118,12 @@ class SyncRequest(BaseModel):
         default="local",
         description="Hopper instance name — scopes the pull to this instance only",
     )
+    pull_limit: int | None = Field(
+        default=None,
+        ge=1,
+        description="Max tasks to return in this response; None means unbounded "
+        "(older clients). When more remain, the response sets has_more.",
+    )
 
 
 class SyncConflict(BaseModel):
@@ -138,6 +144,14 @@ class SyncResponse(BaseModel):
     )
     server_time: int = Field(
         description="Server's current time (ms since epoch)",
+    )
+    has_more: bool = Field(
+        default=False,
+        description="More updated tasks remain; repeat the request with since=next_since",
+    )
+    next_since: int | None = Field(
+        default=None,
+        description="Cursor (ms) to pass as 'since' for the next page when has_more",
     )
     accepted: list[str] = Field(
         default_factory=list,

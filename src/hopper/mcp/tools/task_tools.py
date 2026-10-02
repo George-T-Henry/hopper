@@ -7,7 +7,7 @@ Provides MCP tools for creating, listing, getting, and updating tasks.
 from typing import Any
 
 import httpx
-from mcp.types import Tool
+from mcp_types import Tool
 
 
 def get_task_tools() -> list[Tool]:
@@ -24,7 +24,7 @@ def get_task_tools() -> list[Tool]:
                 "projects based on content. Use this when the user wants to capture "
                 "a task, idea, or work item during a conversation."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "title": {
@@ -93,7 +93,7 @@ def get_task_tools() -> list[Tool]:
                 "specific kind, or all_kinds=true to see everything. To browse agent "
                 "knowledge, prefer hopper_list_memory."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "status": {
@@ -152,7 +152,7 @@ def get_task_tools() -> list[Tool]:
                 "the legacy tags=['memory'] approach). Use it to recall what you and "
                 "other agents have learned."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "subject": {
@@ -186,7 +186,7 @@ def get_task_tools() -> list[Tool]:
                 "Get detailed information about a specific task. Use this when you "
                 "need full task details including description, status, routing info, etc."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_id": {
@@ -203,7 +203,7 @@ def get_task_tools() -> list[Tool]:
                 "Update an existing task. Can update title, description, priority, "
                 "or tags. Only provide the fields you want to change."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_id": {
@@ -238,7 +238,7 @@ def get_task_tools() -> list[Tool]:
                 "Change the status of a task. Use this to mark tasks as in_progress "
                 "when starting work, or completed when done."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_id": {

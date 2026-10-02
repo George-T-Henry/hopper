@@ -147,7 +147,7 @@ class TestStdioToolSchemas:
 
     def test_create_schema_exposes_memory_fields(self):
         create = next(t for t in get_task_tools() if t.name == "hopper_create_task")
-        props = create.inputSchema["properties"]
+        props = create.input_schema["properties"]
         assert "kind" in props
         assert "subject" in props
         assert "scope" in props
@@ -155,7 +155,7 @@ class TestStdioToolSchemas:
 
     def test_list_schema_exposes_kind_and_all_kinds(self):
         lst = next(t for t in get_task_tools() if t.name == "hopper_list_tasks")
-        props = lst.inputSchema["properties"]
+        props = lst.input_schema["properties"]
         assert "kind" in props
         assert "all_kinds" in props
 

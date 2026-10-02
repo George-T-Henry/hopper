@@ -24,6 +24,17 @@ DEFAULT_SQLITE_URL = "sqlite:///./hopper.db"
 DEFAULT_POSTGRES_URL = "postgresql://hopper:hopper@localhost/hopper"
 
 
+def _pin_sync_postgres_driver(url: str) -> str:
+    """Pin bare ``postgresql://`` to psycopg2, the driver this project declares.
+
+    SQLAlchemy 2.1 changed the bare-URL default from psycopg2 to psycopg (v3),
+    which isn't installed, so a plain URL would fail to connect.
+    """
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    return url
+
+
 def get_database_url(async_mode: bool = False) -> str:
     """
     Get database URL from environment or use default.
@@ -59,6 +70,7 @@ def create_sync_engine(database_url: str | None = None, echo: bool = False) -> E
     """
     if database_url is None:
         database_url = get_database_url(async_mode=False)
+    database_url = _pin_sync_postgres_driver(database_url)
 
     # Configure connection pool based on database type
     if database_url.startswith("sqlite"):

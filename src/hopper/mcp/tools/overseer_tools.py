@@ -7,7 +7,7 @@ sub-instances, search across the DAG, and access to northbound summaries.
 from typing import Any
 
 import httpx
-from mcp.types import Tool
+from mcp_types import Tool
 
 
 def get_overseer_tools() -> list[Tool]:
@@ -20,7 +20,7 @@ def get_overseer_tools() -> list[Tool]:
                 "counts, memory counts, and last consolidation timestamps. Use "
                 "this to understand what's happening across all sub-instances."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "instance_id": {
@@ -38,7 +38,7 @@ def get_overseer_tools() -> list[Tool]:
                 "memories matching a query. Returns results tagged with their "
                 "source instance so you know where each result lives."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "instance_id": {
@@ -73,7 +73,7 @@ def get_overseer_tools() -> list[Tool]:
                 "high-level themes and connections that span projects. Each "
                 "summary includes pointers to the source instances and records."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "instance_id": {
@@ -98,7 +98,7 @@ def get_overseer_tools() -> list[Tool]:
                 "drill down into a source record referenced by a northbound "
                 "summary or cross-instance search result."
             ),
-            inputSchema={
+            input_schema={
                 "type": "object",
                 "properties": {
                     "task_id": {

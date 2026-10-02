@@ -5,6 +5,7 @@ from rich.console import Console
 
 from hopper import __version__
 from hopper.cli.config import Config, get_storage_path, is_local_mode, load_config
+from hopper.utils.version import version_report
 
 console = Console()
 
@@ -58,7 +59,11 @@ class Context:
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(version=__version__, prog_name="hopper")
+@click.version_option(
+    version=__version__,
+    prog_name="hopper",
+    message=version_report(__version__)[0].replace("%", "%%"),
+)
 @click.option(
     "--config",
     "-c",
@@ -124,6 +129,7 @@ def cli(
 # Import command groups
 from hopper.cli.commands.config import auth, config_group, init
 from hopper.cli.commands.context import context
+from hopper.cli.commands.doctor import doctor
 from hopper.cli.commands.github import github
 from hopper.cli.commands.instance import instance
 from hopper.cli.commands.kinds import register as register_kinds
@@ -150,6 +156,7 @@ cli.add_command(upstream)
 cli.add_command(revision)
 cli.add_command(mcp)
 cli.add_command(maintenance)
+cli.add_command(doctor)
 cli.add_command(overseer)
 
 # Shortcut: `hopper sync` → `hopper upstream sync` (with `hopper sync status`)

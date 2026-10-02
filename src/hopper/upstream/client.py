@@ -28,6 +28,10 @@ class AuthenticationError(UpstreamError):
     pass
 
 
+class PayloadTooLargeError(UpstreamError):
+    """The server (or a proxy in front of it) rejected the request body as too large (HTTP 413)."""
+
+
 class ConflictError(UpstreamError):
     """Sync conflict occurred."""
 
@@ -44,6 +48,18 @@ class NotAdminError(UpstreamError):
     """Operation requires admin privileges."""
 
     pass
+
+
+def _short_error(response: httpx.Response) -> str:
+    """One-line description of an error response, never a raw HTML dump.
+
+    Prefers the server's JSON ``detail``; otherwise the status code and reason
+    phrase (proxies like nginx answer with a full HTML page).
+    """
+    detail = _detail_or(response, "")
+    if isinstance(detail, str) and detail:
+        return f"{response.status_code} - {detail}"
+    return f"{response.status_code} {response.reason_phrase}".strip()
 
 
 def _detail_or(response: httpx.Response, fallback: str) -> str:
@@ -170,6 +186,7 @@ class UpstreamClient:
         tasks: list[SyncTask],
         since: int = 0,
         instance: str = "local",
+        pull_limit: int | None = None,
     ) -> SyncResponse:
         """Sync tasks with the server.
 
@@ -177,6 +194,8 @@ class UpstreamClient:
             tasks: Tasks to push to the server
             since: Timestamp (ms) to get updates from
             instance: Hopper instance name, scopes the pull to this instance
+            pull_limit: Max tasks the server may return; check ``has_more`` on the
+                response and repeat with ``since=next_since`` for the rest
 
         Returns:
             SyncResponse with server updates and conflict info
@@ -186,6 +205,7 @@ class UpstreamClient:
             tasks=tasks,
             client_time=int(time.time() * 1000),
             instance=instance,
+            pull_limit=pull_limit,
         )
 
         try:
@@ -202,7 +222,12 @@ class UpstreamClient:
                 raise AuthenticationError("DID authentication failed") from e
             if e.response.status_code == 403:
                 raise NotAuthorizedError(e.response.text) from e
-            raise UpstreamError(f"Sync failed: {e.response.status_code} - {e.response.text}") from e
+            if e.response.status_code == 413:
+                raise PayloadTooLargeError(
+                    "413: server rejected the request size; try a smaller --batch-size "
+                    "or raise client_max_body_size on the server proxy"
+                ) from e
+            raise UpstreamError(f"Sync failed: {_short_error(e.response)}") from e
         except httpx.RequestError as e:
             raise UpstreamError(f"Connection error: {e}") from e
 

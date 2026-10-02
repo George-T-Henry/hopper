@@ -21,6 +21,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from hopper import __version__
 from hopper.api.exceptions import (
     HopperException,
     hopper_exception_handler,
@@ -126,7 +127,7 @@ def create_app() -> FastAPI:
         return {
             "status": "healthy",
             "service": "hopper-api",
-            "version": "0.1.0",
+            "version": __version__,
         }
 
     # Root endpoint
@@ -134,7 +135,7 @@ def create_app() -> FastAPI:
     async def root():
         return {
             "name": "Hopper API",
-            "version": "0.1.0",
+            "version": __version__,
             "docs": "/docs",
             "health": "/health",
             "mcp": "/mcp",
@@ -181,10 +182,12 @@ def create_app() -> FastAPI:
 
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-    # Streamable HTTP transport at /mcp (Claude Web 2024+, MCP 1.26+)
-    app.mount("/mcp", create_streamable_http_server())
+    # Mounts match in registration order, so the more specific /mcp/sse must come
+    # before /mcp or the Streamable HTTP app shadows it and returns 400.
     # Legacy SSE transport at /mcp/sse/ (older clients)
     app.mount("/mcp/sse", create_sse_server())
+    # Streamable HTTP transport at /mcp (Claude Web 2024+)
+    app.mount("/mcp", create_streamable_http_server())
 
     # Include upstream sync routes at root so DID-signed paths (/sync, /admin/*)
     # match the client's signature expectations without a mount prefix.

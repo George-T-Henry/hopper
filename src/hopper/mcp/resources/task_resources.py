@@ -7,7 +7,7 @@ Exposes tasks as MCP resources accessible via hopper://tasks/* URIs.
 import json
 
 import httpx
-from mcp.types import Resource, TextContent
+from mcp_types import Resource, TextContent
 
 
 def get_task_resources() -> list[Resource]:
@@ -21,25 +21,25 @@ def get_task_resources() -> list[Resource]:
             uri="hopper://tasks",
             name="All Tasks",
             description="List of all tasks in Hopper",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
         Resource(
             uri="hopper://tasks/pending",
             name="Pending Tasks",
             description="List of pending tasks",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
         Resource(
             uri="hopper://tasks/in_progress",
             name="In Progress Tasks",
             description="List of tasks currently in progress",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
         Resource(
             uri="hopper://tasks/completed",
             name="Completed Tasks",
             description="List of completed tasks",
-            mimeType="application/json",
+            mime_type="application/json",
         ),
     ]
 
