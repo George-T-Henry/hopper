@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from importlib import metadata
 
-
 # The PyPI distribution is "hopper-memory" (see pyproject.toml); the import
 # package is "hopper". Looking up "hopper" instead can match a stale leftover
 # hopper.egg-info directory on sys.path and report an old version.
