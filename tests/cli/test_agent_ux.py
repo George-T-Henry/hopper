@@ -76,6 +76,19 @@ def test_assignee_filter_exact_and_prefix(isolated_runner):
     assert ids("--assignee", "nobody") == set()
 
 
+def test_assignee_filter_applies_before_limit(isolated_runner):
+    # Unassigned tasks created later sort first by default; they must not push
+    # the assignee's tasks out of a small --limit window.
+    mine = {_add(isolated_runner, f"m{i}", "--assign", "claude:me").strip() for i in range(3)}
+    for i in range(5):
+        _add(isolated_runner, f"other{i}")
+    r = isolated_runner.invoke(
+        cli, ["task", "list", "--ids-only", "--assignee", "claude:me", "--limit", "3"]
+    )
+    assert r.exit_code == 0, r.output
+    assert set(r.output.split()) == mine
+
+
 @pytest.mark.parametrize("compact", [False, True])
 def test_table_shows_full_id(isolated_runner, compact):
     task_id = _add(isolated_runner, "short").strip()

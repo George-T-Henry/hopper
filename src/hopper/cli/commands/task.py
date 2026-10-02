@@ -302,13 +302,18 @@ def list_tasks(
     if tag:
         params["tags"] = ",".join(tag)
 
-    # Fetch tasks
+    # Fetch tasks. The assignee filter runs client-side, so the limit must be
+    # applied after it, not before, or matches beyond the first `limit` rows
+    # would be hidden.
+    if assignee:
+        params["limit"] = 100_000
     try:
         with ctx.get_client() as client:
             tasks = client.list_tasks(**params)
 
         if assignee:
             tasks = [t for t in tasks if (t.get("assigned_to") or "").startswith(assignee)]
+            tasks = tasks[:limit]
 
         if ids_only:
             for task in tasks:
